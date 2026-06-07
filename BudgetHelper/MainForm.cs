@@ -205,5 +205,10 @@ namespace BudgetHelper
             if (text.Length <= maxLength) return text;
             return text.Substring(0, maxLength - 3) + "...";
         }
+
+        private void panel2_Resize(object sender, EventArgs e)
+        {
+            panel1.Left = (this.ClientSize.Width - panel1.Width) / 2;
+        }
     }
 }
