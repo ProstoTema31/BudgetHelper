@@ -2,8 +2,10 @@
 using BudgetHelper.Models;
 using BudgetHelper.Parsers;
 using BudgetHelper.Storage;
+using OfficeOpenXml;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -16,6 +18,7 @@ namespace BudgetHelper
     {
         private string firstFilePath;
         private string secondFilePath;
+        private ComparisonResult lastComparisonResult;
 
         // Имена JSON-файлов для временного хранения
         private const string Act1Json = "act1.json";
@@ -28,6 +31,7 @@ namespace BudgetHelper
             btnSelectFirst.Click += BtnSelectFirst_Click;
             btnSelectSecond.Click += BtnSelectSecond_Click;
             btnCompare.Click += BtnCompare_Click;
+            btnExport.Click += BtnExport_Click;
         }
 
         private void BtnSelectFirst_Click(object sender, EventArgs e)
@@ -96,6 +100,7 @@ namespace BudgetHelper
                 var result = comparer.Compare(loadedOps1, loadedOps2,
                                               loadedHeader1.OpeningBalance, loadedHeader2.OpeningBalance,
                                               loadedHeader1.ClosingBalance, loadedHeader2.ClosingBalance);
+                lastComparisonResult = result;
                 DisplayResult(result);
             }
             catch (Exception ex)
@@ -200,6 +205,188 @@ namespace BudgetHelper
         private void panel2_Resize(object sender, EventArgs e)
         {
             panel1.Left = (this.ClientSize.Width - panel1.Width) / 2;
+        }
+
+        private void BtnExport_Click(object sender, EventArgs e)
+        {
+            // Проверяем, была ли вообще выполнена сверка
+            if (lastComparisonResult == null)
+            {
+                MessageBox.Show("Сначала выполните сверку актов!", "Предупреждение", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            using (SaveFileDialog sfd = new SaveFileDialog())
+            {
+                sfd.Filter = "Excel файлы (*.xlsx)|*.xlsx";
+                sfd.FileName = $"Протокол_сверки_{DateTime.Now:yyyyMMdd_HHmmss}.xlsx";
+                sfd.Title = "Сохранить протокол сверки";
+
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        ExportToExcel(sfd.FileName, lastComparisonResult);
+                        AppendColoredText($"\n[УСПЕХ] Протокол успешно сохранен в файл: {Path.GetFileName(sfd.FileName)}\n", Color.Green);
+                        MessageBox.Show("Протокол успешно экспортирован!", "Успех", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Ошибка при экспорте: {ex.Message}", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        AppendColoredText($"\n[ОШИБКА ЭКСПОРТА] {ex.Message}\n", Color.Red);
+                    }
+                }
+            }
+        }
+
+        private void ExportToExcel(string filePath, ComparisonResult r)
+        {
+
+            using (var package = new ExcelPackage())
+            {
+                // Создаем лист
+                var ws = package.Workbook.Worksheets.Add("Проверка операций");
+
+                // Исправление для корректного отображения сетки во всех версиях
+                ws.View.ShowGridLines = true;
+
+                // 1. Главный заголовок документа
+                ws.Cells["A1"].Value = "ПРОТОКОЛ СВЕРКИ ОПЕРАЦИЙ";
+                ws.Cells["A1"].Style.Font.Size = 16;
+                ws.Cells["A1"].Style.Font.Bold = true;
+                ws.Cells["A1:E1"].Merge = true;
+
+                // 2. Шапка блока Сальдо
+                ws.Cells["A3"].Value = "Параметр";
+                ws.Cells["B3"].Value = "Акт 1 (Наша компания)";
+                ws.Cells["C3"].Value = "Акт 2 (Контрагент)";
+                ws.Cells["D3"].Value = "Расхождение";
+                ws.Cells["E3"].Value = "Статус";
+
+                using (var range = ws.Cells["A3:E3"])
+                {
+                    range.Style.Font.Bold = true;
+                    range.Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                    range.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(235, 235, 235)); // Мягкий серый цвет
+                    range.Style.Border.Bottom.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                }
+
+                // Данные Начального сальдо
+                ws.Cells["A4"].Value = "Начальное сальдо";
+                ws.Cells["B4"].Value = r.OpeningBalanceFirst;
+                ws.Cells["C4"].Value = r.OpeningBalanceSecond;
+                ws.Cells["D4"].Value = Math.Abs(r.OpeningBalanceFirst - r.OpeningBalanceSecond);
+                ws.Cells["E4"].Value = r.OpeningBalancesMatch ? "СОВПАДАЕТ" : "НЕ СОВПАДАЕТ";
+
+                // Данные Конечного сальдо
+                ws.Cells["A5"].Value = "Конечное сальдо";
+                ws.Cells["B5"].Value = r.ClosingBalanceFirst;
+                ws.Cells["C5"].Value = r.ClosingBalanceSecond;
+                ws.Cells["D5"].Value = Math.Abs(r.ClosingBalanceFirst - r.ClosingBalanceSecond);
+                ws.Cells["E5"].Value = r.ClosingBalancesMatch ? "СОВПАДАЕТ" : "НЕ СОВПАДАЕТ";
+
+                // Применяем денежный формат чисел для сумм сальдо
+                ws.Cells["B4:D5"].Style.Numberformat.Format = "#,##0.00";
+
+                // Интеллектуальная подсветка статусов сальдо
+                for (int row = 4; row <= 5; row++)
+                {
+                    var statusCell = ws.Cells[row, 5];
+                    statusCell.Style.Font.Bold = true;
+                    statusCell.Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+
+                    if (statusCell.Text == "СОВПАДАЕТ")
+                        statusCell.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(226, 239, 218)); // Мягкий зеленый
+                    else
+                        statusCell.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(252, 228, 214)); // Мягкий красный
+                }
+
+                // Сводная статистика
+                ws.Cells["A7"].Value = "Всего операций в Акте 1:"; ws.Cells["B7"].Value = r.TotalFirstOps;
+                ws.Cells["A8"].Value = "Всего операций в Акте 2:"; ws.Cells["B8"].Value = r.TotalSecondOps;
+                ws.Cells["A9"].Value = "Совпало операций:"; ws.Cells["B9"].Value = r.MatchedOps;
+                ws.Cells["A10"].Value = "Сумма расхождения по оборотам:"; ws.Cells["B10"].Value = r.TotalDifference;
+                ws.Cells["B10"].Style.Numberformat.Format = "#,##0.00";
+                ws.Cells["A7:A10"].Style.Font.Italic = true;
+
+                // 3. Таблица расхождений
+                ws.Cells["A12"].Value = "Таблица выявленных расхождений";
+                ws.Cells["A12"].Style.Font.Size = 13;
+                ws.Cells["A12"].Style.Font.Bold = true;
+
+                ws.Cells["A13"].Value = "Дата";
+                ws.Cells["B13"].Value = "Сумма операции";
+                ws.Cells["C13"].Value = "Описание (содержание операции)";
+                ws.Cells["D13"].Value = "Причина расхождения";
+                ws.Cells["E13"].Value = "Строка в исходнике";
+
+                using (var range = ws.Cells["A13:E13"])
+                {
+                    range.Style.Font.Bold = true;
+                    range.Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                    range.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(218, 227, 243)); // Приятный бухгалтерский синий оттенок
+                    range.Style.Border.Bottom.Style = OfficeOpenXml.Style.ExcelBorderStyle.Medium;
+                }
+
+                int currentRow = 14;
+
+                if (r.Mismatches.Count > 0)
+                {
+                    foreach (var m in r.Mismatches)
+                    {
+                        ws.Cells[currentRow, 1].Value = m.Date;
+                        ws.Cells[currentRow, 2].Value = Math.Abs(m.Amount); // Выводим сумму по модулю
+                        ws.Cells[currentRow, 3].Value = m.Description;
+                        ws.Cells[currentRow, 4].Value = m.Reason;
+                        ws.Cells[currentRow, 5].Value = m.RowIndex == 0 ? "-" : m.RowIndex.ToString();
+
+                        // Форматируем сумму
+                        ws.Cells[currentRow, 2].Style.Numberformat.Format = "#,##0.00";
+
+                        // Подсвечиваем ячейку причины в зависимости от типа ошибки
+                        var reasonCell = ws.Cells[currentRow, 4];
+                        reasonCell.Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+
+                        if (m.Reason.Contains("Только"))
+                        {
+                            reasonCell.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(255, 242, 204)); // Мягкий желтый (отсутствие)
+                        }
+                        else
+                        {
+                            reasonCell.Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(252, 228, 214)); // Мягкий оранжевый (сильное расхождение дат)
+                        }
+
+                        currentRow++;
+                    }
+
+                    // Накладываем тонкие границы на всю таблицу расхождений
+                    using (var range = ws.Cells[13, 1, currentRow - 1, 5])
+                    {
+                        range.Style.Border.Top.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                        range.Style.Border.Bottom.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                        range.Style.Border.Left.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                        range.Style.Border.Right.Style = OfficeOpenXml.Style.ExcelBorderStyle.Thin;
+                    }
+                }
+                else
+                {
+                    // Если расхождений нет вообще
+                    ws.Cells["A14"].Value = "Расхождений не обнаружено! Все операции сходятся идеально.";
+                    ws.Cells["A14:E14"].Merge = true;
+                    ws.Cells["A14"].Style.Font.Italic = true;
+                    ws.Cells["A14"].Style.Font.Color.SetColor(System.Drawing.Color.Green);
+                }
+
+                // Автоподбор ширины для всех колонок
+                ws.Cells[ws.Dimension.Address].AutoFitColumns();
+
+                // Корректируем ширину колонок под длинные тексты, чтобы отчет не растягивался до бесконечности
+                ws.Column(3).Width = 50; // Колонка описания
+                ws.Column(4).Width = 28; // Колонка причины
+
+                // Сохраняем файл на диск
+                package.SaveAs(new FileInfo(filePath));
+            }
         }
     }
 }

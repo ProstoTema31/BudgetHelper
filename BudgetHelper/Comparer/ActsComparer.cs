@@ -46,8 +46,8 @@ namespace BudgetHelper.Comparer
         private const int DateToleranceDays = 5;
 
         public ComparisonResult Compare(List<DocumentContent> firstOps, List<DocumentContent> secondOps,
-                                        decimal firstOpening, decimal secondOpening,
-                                        decimal firstClosing, decimal secondClosing)
+                                decimal firstOpening, decimal secondOpening,
+                                decimal firstClosing, decimal secondClosing)
         {
             var result = new ComparisonResult
             {
@@ -86,24 +86,54 @@ namespace BudgetHelper.Comparer
 
             bool IsAmountMatch(NormOp f, NormOp s) => Math.Abs(Math.Abs(f.Amount) - Math.Abs(s.Amount)) <= 0.01m;
 
+            // 1. Идеальное совпадение: Сумма, точная дата, описание
             MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
                 IsAmountMatch(f, s) &&
                 f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
                 f.ParsedDate.Value.Date == s.ParsedDate.Value.Date &&
                 f.NormDesc == s.NormDesc);
 
+            // 2. Хорошее совпадение: Сумма, точная дата (описание игнорируем)
             MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
                 IsAmountMatch(f, s) &&
                 f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
                 f.ParsedDate.Value.Date == s.ParsedDate.Value.Date);
 
-            MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
+            // 3. ТЕПЕРЬ ФИКСИРУЕМ: Совпадение по сумме, но ДАТЫ РАСХОДЯТСЯ в пределах допуска
+            for (int i = 0; i < firstNorm.Count; i++)
             {
-                if (!IsAmountMatch(f, s)) return false;
-                if (!f.ParsedDate.HasValue || !s.ParsedDate.HasValue) return false;
-                return Math.Abs((f.ParsedDate.Value - s.ParsedDate.Value).TotalDays) <= DateToleranceDays;
-            });
+                if (matchedFirst[i]) continue;
+                var f = firstNorm[i];
 
+                for (int j = 0; j < secondNorm.Count; j++)
+                {
+                    if (matchedSecond[j]) continue;
+                    var s = secondNorm[j];
+
+                    if (IsAmountMatch(f, s) && f.ParsedDate.HasValue && s.ParsedDate.HasValue)
+                    {
+                        double daysDiff = Math.Abs((f.ParsedDate.Value - s.ParsedDate.Value).TotalDays);
+                        if (daysDiff <= DateToleranceDays)
+                        {
+                            matchedFirst[i] = true;
+                            matchedSecond[j] = true;
+
+                            mismatches.Add(new OperationMismatch
+                            {
+                                Date = f.DateStr,
+                                Description = f.Original.OperationDescription,
+                                Amount = f.Amount,
+                                ExpectedAmount = s.Amount,
+                                Reason = "Расхождение в датах операций", // Точно как в образце!
+                                RowIndex = f.Original.RowIndex
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // Обычный поиск сильных расхождений (> 5 дней) или уникальных операций
             for (int i = 0; i < firstNorm.Count; i++)
             {
                 if (matchedFirst[i]) continue;
@@ -164,8 +194,9 @@ namespace BudgetHelper.Comparer
                 }
             }
 
-            result.MatchedOps = matchedFirst.Count(x => x);
-            result.Mismatches = mismatches;
+            // Совпавшими операциями теперь считаются ТОЛЬКО те, где сошлись и суммы, и точные даты (Проходы 1 и 2)
+            result.MatchedOps = matchedFirst.Count(x => x) - mismatches.Count(m => m.Reason == "Расхождение в датах операций");
+            result.Mismatches = mismatches.OrderBy(m => m.Date).ToList(); // сортируем по дате для красоты отчета
             result.TotalDifference = Math.Abs(firstReal.Sum(x => x.Amount) - secondReal.Sum(x => x.Amount));
             result.IsMatch = mismatches.Count == 0 && result.OpeningBalancesMatch && result.ClosingBalancesMatch;
 

@@ -41,6 +41,7 @@
             this.label3 = new System.Windows.Forms.Label();
             this.txtResult = new System.Windows.Forms.RichTextBox();
             this.panel2 = new System.Windows.Forms.Panel();
+            this.btnExport = new System.Windows.Forms.Button();
             this.panel1.SuspendLayout();
             this.panel2.SuspendLayout();
             this.SuspendLayout();
@@ -139,9 +140,9 @@
             this.btnCompare.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnCompare.Font = new System.Drawing.Font("Segoe UI", 18F, System.Drawing.FontStyle.Bold);
             this.btnCompare.ForeColor = System.Drawing.Color.DarkSlateGray;
-            this.btnCompare.Location = new System.Drawing.Point(169, 125);
+            this.btnCompare.Location = new System.Drawing.Point(138, 125);
             this.btnCompare.Name = "btnCompare";
-            this.btnCompare.Size = new System.Drawing.Size(424, 43);
+            this.btnCompare.Size = new System.Drawing.Size(473, 43);
             this.btnCompare.TabIndex = 6;
             this.btnCompare.Text = "Сравнить акты";
             this.btnCompare.UseVisualStyleBackColor = false;
@@ -181,6 +182,7 @@
             // panel2
             // 
             this.panel2.Anchor = System.Windows.Forms.AnchorStyles.Top;
+            this.panel2.Controls.Add(this.btnExport);
             this.panel2.Controls.Add(this.progressBar);
             this.panel2.Controls.Add(this.btnCompare);
             this.panel2.Controls.Add(this.panel1);
@@ -189,6 +191,20 @@
             this.panel2.Size = new System.Drawing.Size(784, 235);
             this.panel2.TabIndex = 10;
             this.panel2.Resize += new System.EventHandler(this.panel2_Resize);
+            // 
+            // btnExport
+            // 
+            this.btnExport.BackColor = System.Drawing.Color.LightSalmon;
+            this.btnExport.FlatAppearance.BorderSize = 0;
+            this.btnExport.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnExport.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            this.btnExport.ForeColor = System.Drawing.Color.SaddleBrown;
+            this.btnExport.Location = new System.Drawing.Point(629, 125);
+            this.btnExport.Name = "btnExport";
+            this.btnExport.Size = new System.Drawing.Size(143, 43);
+            this.btnExport.TabIndex = 8;
+            this.btnExport.Text = "Экспорт";
+            this.btnExport.UseVisualStyleBackColor = false;
             // 
             // MainForm
             // 
@@ -224,6 +240,7 @@
         private System.Windows.Forms.Label label3;
         private System.Windows.Forms.RichTextBox txtResult;
         private System.Windows.Forms.Panel panel2;
+        private System.Windows.Forms.Button btnExport;
     }
 }
 
