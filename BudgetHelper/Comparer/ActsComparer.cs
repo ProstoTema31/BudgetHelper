@@ -34,6 +34,17 @@ namespace BudgetHelper.Comparer
 
     public class ActsComparer
     {
+        private class NormOp
+        {
+            public DocumentContent Original { get; set; }
+            public string NormDesc { get; set; }
+            public string DateStr { get; set; }
+            public DateTime? ParsedDate { get; set; }
+            public decimal Amount { get; set; }
+        }
+
+        private const int DateToleranceDays = 5;
+
         public ComparisonResult Compare(List<DocumentContent> firstOps, List<DocumentContent> secondOps,
                                         decimal firstOpening, decimal secondOpening,
                                         decimal firstClosing, decimal secondClosing)
@@ -51,19 +62,21 @@ namespace BudgetHelper.Comparer
             var firstReal = firstOps.Where(x => !x.IsOpeningBalance && !x.IsClosingBalance).ToList();
             var secondReal = secondOps.Where(x => !x.IsOpeningBalance && !x.IsClosingBalance).ToList();
 
-            var firstNorm = firstReal.Select(op => new
+            var firstNorm = firstReal.Select(op => new NormOp
             {
                 Original = op,
                 NormDesc = NormalizeDescription(op.OperationDescription + " " + op.DocumentNumber),
-                Date = op.OperationDate,
+                DateStr = op.OperationDate,
+                ParsedDate = ParseDate(op.OperationDate),
                 Amount = op.Amount
             }).ToList();
 
-            var secondNorm = secondReal.Select(op => new
+            var secondNorm = secondReal.Select(op => new NormOp
             {
                 Original = op,
                 NormDesc = NormalizeDescription(op.OperationDescription + " " + op.DocumentNumber),
-                Date = op.OperationDate,
+                DateStr = op.OperationDate,
+                ParsedDate = ParseDate(op.OperationDate),
                 Amount = op.Amount
             }).ToList();
 
@@ -71,77 +84,63 @@ namespace BudgetHelper.Comparer
             bool[] matchedSecond = new bool[secondNorm.Count];
             var mismatches = new List<OperationMismatch>();
 
+            bool IsAmountMatch(NormOp f, NormOp s) => Math.Abs(Math.Abs(f.Amount) - Math.Abs(s.Amount)) <= 0.01m;
+
+            MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
+                IsAmountMatch(f, s) &&
+                f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
+                f.ParsedDate.Value.Date == s.ParsedDate.Value.Date &&
+                f.NormDesc == s.NormDesc);
+
+            MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
+                IsAmountMatch(f, s) &&
+                f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
+                f.ParsedDate.Value.Date == s.ParsedDate.Value.Date);
+
+            MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
+            {
+                if (!IsAmountMatch(f, s)) return false;
+                if (!f.ParsedDate.HasValue || !s.ParsedDate.HasValue) return false;
+                return Math.Abs((f.ParsedDate.Value - s.ParsedDate.Value).TotalDays) <= DateToleranceDays;
+            });
+
             for (int i = 0; i < firstNorm.Count; i++)
             {
+                if (matchedFirst[i]) continue;
                 var f = firstNorm[i];
-                bool found = false;
 
+                bool foundByAmount = false;
                 for (int j = 0; j < secondNorm.Count; j++)
                 {
                     if (matchedSecond[j]) continue;
                     var s = secondNorm[j];
-                    if (f.Date == s.Date && f.NormDesc == s.NormDesc && Math.Abs(f.Amount - s.Amount) <= 0.01m)
-                    {
-                        matchedFirst[i] = true;
-                        matchedSecond[j] = true;
-                        found = true;
-                        break;
-                    }
-                }
-                if (found) continue;
 
-                for (int j = 0; j < secondNorm.Count; j++)
-                {
-                    if (matchedSecond[j]) continue;
-                    var s = secondNorm[j];
-                    if (f.Date == s.Date && Math.Abs(f.Amount - s.Amount) <= 0.01m)
+                    if (IsAmountMatch(f, s))
                     {
                         matchedFirst[i] = true;
                         matchedSecond[j] = true;
                         mismatches.Add(new OperationMismatch
                         {
-                            Date = f.Date,
+                            Date = f.DateStr,
                             Description = f.Original.OperationDescription,
                             Amount = f.Amount,
                             ExpectedAmount = s.Amount,
-                            Reason = "Описание не совпадает",
+                            Reason = "Дата сильно расходится",
                             RowIndex = f.Original.RowIndex
                         });
-                        found = true;
+                        foundByAmount = true;
                         break;
                     }
                 }
-                if (found) continue;
 
-                // По сумме
-                for (int j = 0; j < secondNorm.Count; j++)
-                {
-                    if (matchedSecond[j]) continue;
-                    var s = secondNorm[j];
-                    if (Math.Abs(f.Amount - s.Amount) <= 0.01m)
-                    {
-                        matchedFirst[i] = true;
-                        matchedSecond[j] = true;
-                        mismatches.Add(new OperationMismatch
-                        {
-                            Date = f.Date,
-                            Description = f.Original.OperationDescription,
-                            Amount = f.Amount,
-                            ExpectedAmount = s.Amount,
-                            Reason = "Дата не совпадает",
-                            RowIndex = f.Original.RowIndex
-                        });
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
+                if (!foundByAmount)
                 {
                     mismatches.Add(new OperationMismatch
                     {
-                        Date = f.Date,
+                        Date = f.DateStr,
                         Description = f.Original.OperationDescription,
                         Amount = f.Amount,
+                        ExpectedAmount = 0,
                         Reason = "Только в первом акте",
                         RowIndex = f.Original.RowIndex
                     });
@@ -155,9 +154,10 @@ namespace BudgetHelper.Comparer
                     var s = secondNorm[j];
                     mismatches.Add(new OperationMismatch
                     {
-                        Date = s.Date,
+                        Date = s.DateStr,
                         Description = s.Original.OperationDescription,
                         Amount = s.Amount,
+                        ExpectedAmount = 0,
                         Reason = "Только во втором акте",
                         RowIndex = s.Original.RowIndex
                     });
@@ -172,6 +172,26 @@ namespace BudgetHelper.Comparer
             return result;
         }
 
+        private void MatchOperations(List<NormOp> first, List<NormOp> second, bool[] matchedFirst, bool[] matchedSecond, Func<NormOp, NormOp, bool> condition)
+        {
+            for (int i = 0; i < first.Count; i++)
+            {
+                if (matchedFirst[i]) continue;
+
+                for (int j = 0; j < second.Count; j++)
+                {
+                    if (matchedSecond[j]) continue;
+
+                    if (condition(first[i], second[j]))
+                    {
+                        matchedFirst[i] = true;
+                        matchedSecond[j] = true;
+                        break;
+                    }
+                }
+            }
+        }
+
         private string NormalizeDescription(string desc)
         {
             if (string.IsNullOrEmpty(desc)) return "";
@@ -180,6 +200,22 @@ namespace BudgetHelper.Comparer
             desc = Regex.Replace(desc, @"\b\d{2,6}\b", "");
             desc = Regex.Replace(desc, @"\s+", " ").Trim();
             return desc;
+        }
+
+        private DateTime? ParseDate(string dateStr)
+        {
+            if (string.IsNullOrWhiteSpace(dateStr)) return null;
+
+            string[] formats = { "dd.MM.yyyy", "dd.MM.yy", "d.M.yyyy", "d.M.yy" };
+            if (DateTime.TryParseExact(dateStr.Trim(), formats, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime dt))
+            {
+                return dt;
+            }
+
+            if (DateTime.TryParse(dateStr.Trim(), out DateTime dt2))
+                return dt2;
+
+            return null;
         }
     }
 }
