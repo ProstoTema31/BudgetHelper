@@ -34,7 +34,7 @@ namespace BudgetHelper
         {
             using (OpenFileDialog ofd = new OpenFileDialog())
             {
-                ofd.Filter = "Excel файлы|*.xls;*.xlsx|Все файлы|*.*";
+                ofd.Filter = "Допустимые файлы|*.xls;*.xlsx;*.pdf|Excel файлы|*.xls;*.xlsx|PDF файлы|*.pdf|Все файлы|*.*";
                 ofd.Title = "Выберите первый акт";
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
@@ -49,7 +49,7 @@ namespace BudgetHelper
         {
             using (OpenFileDialog ofd = new OpenFileDialog())
             {
-                ofd.Filter = "Excel файлы|*.xls;*.xlsx|Все файлы|*.*";
+                ofd.Filter = "Допустимые файлы|*.xls;*.xlsx;*.pdf|Excel файлы|*.xls;*.xlsx|PDF файлы|*.pdf|Все файлы|*.*";
                 ofd.Title = "Выберите второй акт";
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
