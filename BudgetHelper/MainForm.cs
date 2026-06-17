@@ -75,24 +75,20 @@ namespace BudgetHelper
             try
             {
                 AppendColoredText("[СТАРТ] Начинаю сверку...\n\n", Color.Blue);
-
-                // Очищаем предыдущие JSON-файлы
                 JsonStorageHelper.ClearStorage(Act1Json, Act2Json);
 
                 AppendColoredText("[1/3] Парсинг первого файла...\n", Color.DarkBlue);
-                var (header1, ops1) = await ParseFileAsync(firstFilePath);
+                var (header1, ops1) = await ParseFileAsync(firstFilePath, isSecondFile: false);
                 AppendColoredText($"      Загружено операций: {ops1.Count}, начальное сальдо: {header1.OpeningBalance:N2}, конечное: {header1.ClosingBalance:N2}\n", Color.Green);
                 JsonStorageHelper.SaveAct(Act1Json, header1, ops1);
 
                 AppendColoredText("[2/3] Парсинг второго файла...\n", Color.DarkBlue);
-                var (header2, ops2) = await ParseFileAsync(secondFilePath);
+                var (header2, ops2) = await ParseFileAsync(secondFilePath, isSecondFile: true);
                 AppendColoredText($"      Загружено операций: {ops2.Count}, начальное сальдо: {header2.OpeningBalance:N2}, конечное: {header2.ClosingBalance:N2}\n", Color.Green);
                 JsonStorageHelper.SaveAct(Act2Json, header2, ops2);
 
                 AppendColoredText("[3/3] Загрузка из JSON и сравнение...\n\n", Color.DarkBlue);
 
-                // Загружаем сохранённые данные (можно было бы использовать уже имеющиеся переменные,
-                // но для демонстрации работы с JSON загружаем заново)
                 var (loadedHeader1, loadedOps1) = JsonStorageHelper.LoadAct(Act1Json);
                 var (loadedHeader2, loadedOps2) = JsonStorageHelper.LoadAct(Act2Json);
 
@@ -100,7 +96,6 @@ namespace BudgetHelper
                 var result = comparer.Compare(loadedOps1, loadedOps2,
                                               loadedHeader1.OpeningBalance, loadedHeader2.OpeningBalance,
                                               loadedHeader1.ClosingBalance, loadedHeader2.ClosingBalance);
-
                 DisplayResult(result);
             }
             catch (Exception ex)
@@ -115,22 +110,18 @@ namespace BudgetHelper
             }
         }
 
-        private async Task<(DocumentHeader header, List<DocumentContent> operations)> ParseFileAsync(string path)
+        private async Task<(DocumentHeader header, List<DocumentContent> operations)> ParseFileAsync(string path, bool isSecondFile)
         {
             return await Task.Run(() =>
             {
                 if (path.EndsWith(".xls") || path.EndsWith(".xlsx"))
                     return ExcelParser.ParseExcel(path);
                 else if (PdfParser.IsPdfFile(path))
-                    return PdfParser.ParsePdf(path);
+                    return PdfParser.ParsePdf(path, extractCounterparty: isSecondFile);
                 else
                     throw new NotSupportedException("Поддерживаются только Excel и PDF файлы");
             });
         }
-
-        // Остальные методы DisplayResult, AppendColoredText, AppendText, TruncateString
-        // остаются без изменений. Они уже были в исходном MainForm.txt.
-        // Для полноты ниже приведены их копии (можно оставить как есть).
 
         private void DisplayResult(ComparisonResult r)
         {
