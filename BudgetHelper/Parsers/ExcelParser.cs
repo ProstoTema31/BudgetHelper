@@ -24,8 +24,7 @@ namespace BudgetHelper.Parsers
                 var header = new DocumentHeader
                 {
                     DocumentNumber = Path.GetFileNameWithoutExtension(filePath),
-                    DocumentDate = DateTime.Now,
-                    Contractor = DetectContractor(worksheet)
+                    DocumentDate = DateTime.Now
                 };
 
                 var operations = new List<DocumentContent>();
@@ -103,13 +102,9 @@ namespace BudgetHelper.Parsers
                         OperationDate = dateStr,
                         OperationDescription = fullDesc.Trim(),
                         DocumentNumber = number,
-                        Debit = debet,
-                        Credit = credit,
                         Amount = amount,
                         RowIndex = row
                     });
-
-                    header.TotalAmount += amount;
                 }
 
                 header.OpeningBalance = opening;

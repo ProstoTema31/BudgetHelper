@@ -16,8 +16,7 @@ namespace BudgetHelper.Parsers
             var header = new DocumentHeader
             {
                 DocumentNumber = Path.GetFileNameWithoutExtension(filePath),
-                DocumentDate = DateTime.Now,
-                TotalAmount = 0
+                DocumentDate = DateTime.Now
             };
 
             var contents = new List<DocumentContent>();
@@ -71,7 +70,6 @@ namespace BudgetHelper.Parsers
                             if (currentOp != null && currentOp.Amount != 0)
                             {
                                 contents.Add(currentOp);
-                                header.TotalAmount += currentOp.Amount;
                                 currentOp = null;
                             }
 
@@ -109,7 +107,6 @@ namespace BudgetHelper.Parsers
                             if (currentOp != null && currentOp.Amount != 0)
                             {
                                 contents.Add(currentOp);
-                                header.TotalAmount += currentOp.Amount;
                             }
 
                             currentOp = new DocumentContent
@@ -137,7 +134,6 @@ namespace BudgetHelper.Parsers
                     if (currentOp != null && currentOp.Amount != 0)
                     {
                         contents.Add(currentOp);
-                        header.TotalAmount += currentOp.Amount;
                     }
                 }
             }

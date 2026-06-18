@@ -55,13 +55,12 @@ namespace BudgetHelper.Comparer
                 OpeningBalanceSecond = secondOpening,
                 ClosingBalanceFirst = firstClosing,
                 ClosingBalanceSecond = secondClosing,
-                TotalFirstOps = firstOps.Count(x => !x.IsOpeningBalance && !x.IsClosingBalance),
-                TotalSecondOps = secondOps.Count(x => !x.IsOpeningBalance && !x.IsClosingBalance)
+                TotalFirstOps = firstOps.Count,
+                TotalSecondOps = secondOps.Count
             };
 
-            var firstReal = firstOps.Where(x => !x.IsOpeningBalance && !x.IsClosingBalance).ToList();
-            var secondReal = secondOps.Where(x => !x.IsOpeningBalance && !x.IsClosingBalance).ToList();
-
+            var firstReal = firstOps.ToList();
+            var secondReal = secondOps.ToList();
             var firstNorm = firstReal.Select(op => new NormOp
             {
                 Original = op,
