@@ -149,11 +149,10 @@
             // 
             // progressBar
             // 
-            this.progressBar.Location = new System.Drawing.Point(0, 187);
+            this.progressBar.Location = new System.Drawing.Point(20, 187);
             this.progressBar.Name = "progressBar";
-            this.progressBar.Size = new System.Drawing.Size(784, 30);
+            this.progressBar.Size = new System.Drawing.Size(752, 30);
             this.progressBar.TabIndex = 7;
-            this.progressBar.Visible = false;
             // 
             // label3
             // 

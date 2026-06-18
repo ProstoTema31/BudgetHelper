@@ -66,6 +66,7 @@ namespace BudgetHelper
 
         private async void BtnCompare_Click(object sender, EventArgs e)
         {
+            // --- ПРОВЕРКИ ---
             if (string.IsNullOrEmpty(firstFilePath) || string.IsNullOrEmpty(secondFilePath))
             {
                 MessageBox.Show("Выберите оба файла!", "Ошибка", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -78,48 +79,73 @@ namespace BudgetHelper
                 return;
             }
 
+            // --- ПОДГОТОВКА ИНТЕРФЕЙСА ---
             btnCompare.Enabled = false;
-            progressBar.Visible = true;
             txtResult.Clear();
+
+            // Сбрасываем ProgressBar перед новым запуском и делаем его видимым
+            progressBar.Style = ProgressBarStyle.Continuous;
+            progressBar.Minimum = 0;
+            progressBar.Maximum = 100;
+            progressBar.Value = 5;
+            progressBar.Visible = true;
 
             try
             {
                 AppendColoredText("[СТАРТ] Начинаю сверку...\n\n", Color.Blue);
                 JsonStorageHelper.ClearStorage(Act1Json, Act2Json);
 
+                // --- ЭТАП 1: Парсинг первого файла ---
                 AppendColoredText("[1/3] Парсинг первого файла...\n", Color.DarkBlue);
                 var (header1, ops1) = await ParseFileAsync(firstFilePath, isSecondFile: false);
                 AppendColoredText($"      Загружено операций: {ops1.Count}, начальное сальдо: {header1.OpeningBalance:N2}, конечное: {header1.ClosingBalance:N2}\n", Color.Green);
                 JsonStorageHelper.SaveAct(Act1Json, header1, ops1);
 
+                progressBar.Value = 35;
+
+                // --- ЭТАП 2: Парсинг второго файла ---
                 AppendColoredText("[2/3] Парсинг второго файла...\n", Color.DarkBlue);
                 var (header2, ops2) = await ParseFileAsync(secondFilePath, isSecondFile: true);
                 AppendColoredText($"      Загружено операций: {ops2.Count}, начальное сальдо: {header2.OpeningBalance:N2}, конечное: {header2.ClosingBalance:N2}\n", Color.Green);
                 JsonStorageHelper.SaveAct(Act2Json, header2, ops2);
-                
-                AppendColoredText("[3/3] Загрузка из JSON и сравнение...\n\n", Color.DarkBlue);
 
+                progressBar.Value = 70;
+
+                // --- ЭТАП 3: Сравнение данных ---
+                AppendColoredText("[3/3] Загрузка из JSON и сравнение...\n\n", Color.DarkBlue);
                 var (loadedHeader1, loadedOps1) = JsonStorageHelper.LoadAct(Act1Json);
                 var (loadedHeader2, loadedOps2) = JsonStorageHelper.LoadAct(Act2Json);
 
-                var comparer = new ActsComparer();
+                progressBar.Style = ProgressBarStyle.Marquee;
 
+                var comparer = new ActsComparer();
                 var result = await Task.Run(() => comparer.Compare(loadedOps1, loadedOps2,
                                               loadedHeader1.OpeningBalance, loadedHeader2.OpeningBalance,
                                               loadedHeader1.ClosingBalance, loadedHeader2.ClosingBalance));
 
                 lastComparisonResult = result;
+
+                progressBar.Style = ProgressBarStyle.Continuous;
+                progressBar.Value = 100;
+                progressBar.Value = 99;
+                progressBar.Value = 100;
+                progressBar.Refresh();
+
                 DisplayResult(result);
             }
             catch (Exception ex)
             {
                 AppendColoredText($"\n[ОШИБКА] {ex.Message}\n", Color.Red);
                 AppendColoredText(ex.StackTrace + "\n", Color.DarkGray);
+
+                progressBar.Style = ProgressBarStyle.Continuous;
+                progressBar.Value = 0;
             }
             finally
             {
                 btnCompare.Enabled = true;
-                progressBar.Visible = false;
+
+                progressBar.Style = ProgressBarStyle.Continuous;
             }
         }
 
