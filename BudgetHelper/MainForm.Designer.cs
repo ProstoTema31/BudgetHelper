@@ -202,7 +202,7 @@
             this.btnExport.Name = "btnExport";
             this.btnExport.Size = new System.Drawing.Size(143, 43);
             this.btnExport.TabIndex = 8;
-            this.btnExport.Text = "Экспорт";
+            this.btnExport.Text = "Экспорт в Excel";
             this.btnExport.UseVisualStyleBackColor = false;
             // 
             // MainForm
