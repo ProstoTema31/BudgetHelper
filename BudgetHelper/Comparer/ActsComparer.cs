@@ -9,7 +9,7 @@ namespace BudgetHelper.Comparer
     public class OperationMismatch
     {
         public string Date { get; set; }
-        public DateTime? ParsedDate { get; set; }
+        public DateTime? ParsedDate { get; set; } // Скрытое поле для правильной хронологической сортировки
         public string Description { get; set; }
         public decimal Amount { get; set; }
         public string Reason { get; set; }
@@ -35,6 +35,7 @@ namespace BudgetHelper.Comparer
 
     public class ActsComparer
     {
+        // Внутренний класс теперь сам знает, нашел ли он пару
         private class NormOp
         {
             public DocumentContent Original { get; set; }
@@ -42,13 +43,14 @@ namespace BudgetHelper.Comparer
             public string DateStr { get; set; }
             public DateTime? ParsedDate { get; set; }
             public decimal Amount { get; set; }
+            public bool IsMatched { get; set; } = false;
         }
 
         private const int DateToleranceDays = 5;
 
         public ComparisonResult Compare(List<DocumentContent> firstOps, List<DocumentContent> secondOps,
-                                decimal firstOpening, decimal secondOpening,
-                                decimal firstClosing, decimal secondClosing)
+                                        decimal firstOpening, decimal secondOpening,
+                                        decimal firstClosing, decimal secondClosing)
         {
             var result = new ComparisonResult
             {
@@ -60,9 +62,7 @@ namespace BudgetHelper.Comparer
                 TotalSecondOps = secondOps.Count
             };
 
-            var firstReal = firstOps.ToList();
-            var secondReal = secondOps.ToList();
-            var firstNorm = firstReal.Select(op => new NormOp
+            var firstNorm = firstOps.Select(op => new NormOp
             {
                 Original = op,
                 NormDesc = NormalizeDescription(op.OperationDescription + " " + op.DocumentNumber),
@@ -71,7 +71,7 @@ namespace BudgetHelper.Comparer
                 Amount = op.Amount
             }).ToList();
 
-            var secondNorm = secondReal.Select(op => new NormOp
+            var secondNorm = secondOps.Select(op => new NormOp
             {
                 Original = op,
                 NormDesc = NormalizeDescription(op.OperationDescription + " " + op.DocumentNumber),
@@ -80,152 +80,122 @@ namespace BudgetHelper.Comparer
                 Amount = op.Amount
             }).ToList();
 
-            bool[] matchedFirst = new bool[firstNorm.Count];
-            bool[] matchedSecond = new bool[secondNorm.Count];
             var mismatches = new List<OperationMismatch>();
 
-            bool IsAmountMatch(NormOp f, NormOp s) => Math.Abs(Math.Abs(f.Amount) - Math.Abs(s.Amount)) <= 0.01m;
+            // ОПТИМИЗАЦИЯ: Разделяем операции по "корзинам" на основе суммы
+            var lookup1 = firstNorm.ToLookup(x => Math.Round(Math.Abs(x.Amount), 2));
+            var lookup2 = secondNorm.ToLookup(x => Math.Round(Math.Abs(x.Amount), 2));
 
-            // 1. Идеальное совпадение: Сумма, точная дата, описание
-            MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
-                IsAmountMatch(f, s) &&
-                f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
-                f.ParsedDate.Value.Date == s.ParsedDate.Value.Date &&
-                f.NormDesc == s.NormDesc);
-
-            // 2. Хорошее совпадение: Сумма, точная дата (описание игнорируем)
-            MatchOperations(firstNorm, secondNorm, matchedFirst, matchedSecond, (f, s) =>
-                IsAmountMatch(f, s) &&
-                f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
-                f.ParsedDate.Value.Date == s.ParsedDate.Value.Date);
-
-            // 3. ТЕПЕРЬ ФИКСИРУЕМ: Совпадение по сумме, но ДАТЫ РАСХОДЯТСЯ в пределах допуска
-            for (int i = 0; i < firstNorm.Count; i++)
+            // Локальная функция для проходов только ВНУТРИ одной суммовой группы (работает мгновенно)
+            void MatchLocal(List<NormOp> l1, List<NormOp> l2, Func<NormOp, NormOp, bool> condition, string mismatchReason = null)
             {
-                if (matchedFirst[i]) continue;
-                var f = firstNorm[i];
-
-                for (int j = 0; j < secondNorm.Count; j++)
+                foreach (var f in l1)
                 {
-                    if (matchedSecond[j]) continue;
-                    var s = secondNorm[j];
+                    if (f.IsMatched) continue;
 
-                    if (IsAmountMatch(f, s) && f.ParsedDate.HasValue && s.ParsedDate.HasValue)
+                    foreach (var s in l2)
                     {
-                        double daysDiff = Math.Abs((f.ParsedDate.Value - s.ParsedDate.Value).TotalDays);
-                        if (daysDiff <= DateToleranceDays)
-                        {
-                            matchedFirst[i] = true;
-                            matchedSecond[j] = true;
+                        if (s.IsMatched) continue;
 
-                            mismatches.Add(new OperationMismatch
+                        if (condition(f, s))
+                        {
+                            f.IsMatched = true;
+                            s.IsMatched = true;
+
+                            if (mismatchReason != null)
                             {
-                                Date = f.DateStr,
-                                ParsedDate = f.ParsedDate,
-                                Description = f.Original.OperationDescription,
-                                Amount = f.Amount,
-                                ExpectedAmount = s.Amount,
-                                Reason = "Расхождение в датах операций", // Точно как в образце!
-                                RowIndex = f.Original.RowIndex
-                            });
+                                mismatches.Add(new OperationMismatch
+                                {
+                                    Date = f.DateStr,
+                                    ParsedDate = f.ParsedDate,
+                                    Description = f.Original.OperationDescription,
+                                    Amount = f.Amount,
+                                    ExpectedAmount = s.Amount,
+                                    Reason = mismatchReason,
+                                    RowIndex = f.Original.RowIndex
+                                });
+                            }
                             break;
                         }
                     }
                 }
             }
 
-            // Обычный поиск сильных расхождений (> 5 дней) или уникальных операций
-            for (int i = 0; i < firstNorm.Count; i++)
+            // Пробегаемся только по тем суммам, которые есть в первом акте
+            foreach (var group in lookup1)
             {
-                if (matchedFirst[i]) continue;
-                var f = firstNorm[i];
+                var amount = group.Key;
+                var list1 = group.ToList();
 
-                bool foundByAmount = false;
-                for (int j = 0; j < secondNorm.Count; j++)
-                {
-                    if (matchedSecond[j]) continue;
-                    var s = secondNorm[j];
+                // Берем из второго акта только те операции, суммы которых совпадают (с допуском в копейку)
+                var list2 = lookup2.Where(g => Math.Abs(g.Key - amount) <= 0.01m)
+                                   .SelectMany(g => g)
+                                   .ToList();
 
-                    if (IsAmountMatch(f, s))
-                    {
-                        matchedFirst[i] = true;
-                        matchedSecond[j] = true;
-                        mismatches.Add(new OperationMismatch
-                        {
-                            Date = f.DateStr,
-                            ParsedDate = f.ParsedDate,
-                            Description = f.Original.OperationDescription,
-                            Amount = f.Amount,
-                            ExpectedAmount = s.Amount,
-                            Reason = "Дата сильно расходится",
-                            RowIndex = f.Original.RowIndex
-                        });
-                        foundByAmount = true;
-                        break;
-                    }
-                }
+                if (!list2.Any()) continue;
 
-                if (!foundByAmount)
-                {
-                    mismatches.Add(new OperationMismatch
-                    {
-                        Date = f.DateStr,
-                        ParsedDate = f.ParsedDate,
-                        Description = f.Original.OperationDescription,
-                        Amount = f.Amount,
-                        ExpectedAmount = 0,
-                        Reason = "Только в первом акте",
-                        RowIndex = f.Original.RowIndex
-                    });
-                }
+                // 1. Идеальное совпадение: точная дата и описание
+                MatchLocal(list1, list2, (f, s) =>
+                    f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
+                    f.ParsedDate.Value.Date == s.ParsedDate.Value.Date &&
+                    f.NormDesc == s.NormDesc);
+
+                // 2. Хорошее совпадение: точная дата (описание может отличаться)
+                MatchLocal(list1, list2, (f, s) =>
+                    f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
+                    f.ParsedDate.Value.Date == s.ParsedDate.Value.Date);
+
+                // 3. Совпадение с допуском (Даты в пределах DateToleranceDays)
+                MatchLocal(list1, list2, (f, s) =>
+                    f.ParsedDate.HasValue && s.ParsedDate.HasValue &&
+                    Math.Abs((f.ParsedDate.Value - s.ParsedDate.Value).TotalDays) <= DateToleranceDays,
+                    "Расхождение в датах операций");
+
+                // 4. Сумма сходится, но дата сильно расходится (> 5 дней)
+                // Так как мы УЖЕ находимся в группе одинаковых сумм, любые оставшиеся элементы подходят
+                MatchLocal(list1, list2, (f, s) => true, "Дата сильно расходится");
             }
 
-            for (int j = 0; j < secondNorm.Count; j++)
+            // 5. Собираем все операции, которым вообще не нашлось пары по сумме
+            foreach (var f in firstNorm.Where(x => !x.IsMatched))
             {
-                if (!matchedSecond[j])
+                mismatches.Add(new OperationMismatch
                 {
-                    var s = secondNorm[j];
-                    mismatches.Add(new OperationMismatch
-                    {
-                        Date = s.DateStr,
-                        ParsedDate = s.ParsedDate,
-                        Description = s.Original.OperationDescription,
-                        Amount = s.Amount,
-                        ExpectedAmount = 0,
-                        Reason = "Только во втором акте",
-                        RowIndex = s.Original.RowIndex
-                    });
-                }
+                    Date = f.DateStr,
+                    ParsedDate = f.ParsedDate,
+                    Description = f.Original.OperationDescription,
+                    Amount = f.Amount,
+                    ExpectedAmount = 0,
+                    Reason = "Только в первом акте",
+                    RowIndex = f.Original.RowIndex
+                });
             }
 
-            // Совпавшими операциями теперь считаются ТОЛЬКО те, где сошлись и суммы, и точные даты (Проходы 1 и 2)
-            result.MatchedOps = matchedFirst.Count(x => x) - mismatches.Count(m => m.Reason == "Расхождение в датах операций");
-            // Сортируем по настоящей дате, а если даты нет, кидаем в конец списка
+            foreach (var s in secondNorm.Where(x => !x.IsMatched))
+            {
+                mismatches.Add(new OperationMismatch
+                {
+                    Date = s.DateStr,
+                    ParsedDate = s.ParsedDate,
+                    Description = s.Original.OperationDescription,
+                    Amount = s.Amount,
+                    ExpectedAmount = 0,
+                    Reason = "Только во втором акте",
+                    RowIndex = s.Original.RowIndex
+                });
+            }
+
+            // Финальный подсчет статистики
+            result.MatchedOps = firstNorm.Count(x => x.IsMatched)
+                              - mismatches.Count(m => m.Reason == "Расхождение в датах операций")
+                              - mismatches.Count(m => m.Reason == "Дата сильно расходится");
+
+            // Сортировка расхождений теперь идет по настоящим датам, а не по алфавиту
             result.Mismatches = mismatches.OrderBy(m => m.ParsedDate ?? DateTime.MaxValue).ToList();
-            result.TotalDifference = Math.Abs(firstReal.Sum(x => x.Amount) - secondReal.Sum(x => x.Amount));
+            result.TotalDifference = Math.Abs(firstOps.Sum(x => x.Amount) - secondOps.Sum(x => x.Amount));
             result.IsMatch = mismatches.Count == 0 && result.OpeningBalancesMatch && result.ClosingBalancesMatch;
 
             return result;
-        }
-
-        private void MatchOperations(List<NormOp> first, List<NormOp> second, bool[] matchedFirst, bool[] matchedSecond, Func<NormOp, NormOp, bool> condition)
-        {
-            for (int i = 0; i < first.Count; i++)
-            {
-                if (matchedFirst[i]) continue;
-
-                for (int j = 0; j < second.Count; j++)
-                {
-                    if (matchedSecond[j]) continue;
-
-                    if (condition(first[i], second[j]))
-                    {
-                        matchedFirst[i] = true;
-                        matchedSecond[j] = true;
-                        break;
-                    }
-                }
-            }
         }
 
         private string NormalizeDescription(string desc)

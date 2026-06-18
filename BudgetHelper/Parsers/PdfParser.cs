@@ -141,12 +141,21 @@ namespace BudgetHelper.Parsers
             foreach (var op in contents)
             {
                 string desc = op.OperationDescription;
+
                 desc = Regex.Replace(desc, @"\b\d{2}\.\d{2}\.\d{2,4}\b", "");
                 desc = Regex.Replace(desc, @"(?<!\d)\d{1,3}(?:[\s\u00A0\u202F]*\d{3})*(?:[.,]\d{2})(?!\d)", "");
+
+                desc = Regex.Replace(desc, @"\bот\s*[-]*\s*(?=\)|$)", "", RegexOptions.IgnoreCase);
+                desc = Regex.Replace(desc, @"\(\s*\)|\[\s*\]", "");
+                desc = Regex.Replace(desc, @"^\s*[\)\]\-]+", "");
+                desc = Regex.Replace(desc, @"[\(\[\-]+\s*$", "");
+
                 op.OperationDescription = Regex.Replace(desc, @"\s+", " ").Trim();
 
-                if (string.IsNullOrWhiteSpace(op.OperationDescription))
+                if (string.IsNullOrWhiteSpace(op.OperationDescription) || op.OperationDescription.Length < 2)
+                {
                     op.OperationDescription = "Операция";
+                }
             }
 
             for (int i = 0; i < contents.Count; i++) contents[i].RowIndex = i + 1;
