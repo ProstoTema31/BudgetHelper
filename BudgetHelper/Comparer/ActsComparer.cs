@@ -9,6 +9,7 @@ namespace BudgetHelper.Comparer
     public class OperationMismatch
     {
         public string Date { get; set; }
+        public DateTime? ParsedDate { get; set; }
         public string Description { get; set; }
         public decimal Amount { get; set; }
         public string Reason { get; set; }
@@ -120,6 +121,7 @@ namespace BudgetHelper.Comparer
                             mismatches.Add(new OperationMismatch
                             {
                                 Date = f.DateStr,
+                                ParsedDate = f.ParsedDate,
                                 Description = f.Original.OperationDescription,
                                 Amount = f.Amount,
                                 ExpectedAmount = s.Amount,
@@ -151,6 +153,7 @@ namespace BudgetHelper.Comparer
                         mismatches.Add(new OperationMismatch
                         {
                             Date = f.DateStr,
+                            ParsedDate = f.ParsedDate,
                             Description = f.Original.OperationDescription,
                             Amount = f.Amount,
                             ExpectedAmount = s.Amount,
@@ -167,6 +170,7 @@ namespace BudgetHelper.Comparer
                     mismatches.Add(new OperationMismatch
                     {
                         Date = f.DateStr,
+                        ParsedDate = f.ParsedDate,
                         Description = f.Original.OperationDescription,
                         Amount = f.Amount,
                         ExpectedAmount = 0,
@@ -184,6 +188,7 @@ namespace BudgetHelper.Comparer
                     mismatches.Add(new OperationMismatch
                     {
                         Date = s.DateStr,
+                        ParsedDate = s.ParsedDate,
                         Description = s.Original.OperationDescription,
                         Amount = s.Amount,
                         ExpectedAmount = 0,
@@ -195,7 +200,8 @@ namespace BudgetHelper.Comparer
 
             // Совпавшими операциями теперь считаются ТОЛЬКО те, где сошлись и суммы, и точные даты (Проходы 1 и 2)
             result.MatchedOps = matchedFirst.Count(x => x) - mismatches.Count(m => m.Reason == "Расхождение в датах операций");
-            result.Mismatches = mismatches.OrderBy(m => m.Date).ToList(); // сортируем по дате для красоты отчета
+            // Сортируем по настоящей дате, а если даты нет, кидаем в конец списка
+            result.Mismatches = mismatches.OrderBy(m => m.ParsedDate ?? DateTime.MaxValue).ToList();
             result.TotalDifference = Math.Abs(firstReal.Sum(x => x.Amount) - secondReal.Sum(x => x.Amount));
             result.IsMatch = mismatches.Count == 0 && result.OpeningBalancesMatch && result.ClosingBalancesMatch;
 

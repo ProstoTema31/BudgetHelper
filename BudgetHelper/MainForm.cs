@@ -21,8 +21,8 @@ namespace BudgetHelper
         private ComparisonResult lastComparisonResult;
 
         // Имена JSON-файлов для временного хранения
-        private const string Act1Json = "act1.json";
-        private const string Act2Json = "act2.json";
+        private readonly string Act1Json = Path.Combine(Path.GetTempPath(), "act1.json");
+        private readonly string Act2Json = Path.Combine(Path.GetTempPath(), "act2.json");
 
         public MainForm()
         {
@@ -72,6 +72,12 @@ namespace BudgetHelper
                 return;
             }
 
+            if (firstFilePath == secondFilePath && !firstFilePath.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show("Вы выбрали один и тот же Excel-файл для обоих актов!", "Внимание", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             btnCompare.Enabled = false;
             progressBar.Visible = true;
             txtResult.Clear();
@@ -90,16 +96,18 @@ namespace BudgetHelper
                 var (header2, ops2) = await ParseFileAsync(secondFilePath, isSecondFile: true);
                 AppendColoredText($"      Загружено операций: {ops2.Count}, начальное сальдо: {header2.OpeningBalance:N2}, конечное: {header2.ClosingBalance:N2}\n", Color.Green);
                 JsonStorageHelper.SaveAct(Act2Json, header2, ops2);
-
+                
                 AppendColoredText("[3/3] Загрузка из JSON и сравнение...\n\n", Color.DarkBlue);
 
                 var (loadedHeader1, loadedOps1) = JsonStorageHelper.LoadAct(Act1Json);
                 var (loadedHeader2, loadedOps2) = JsonStorageHelper.LoadAct(Act2Json);
 
                 var comparer = new ActsComparer();
-                var result = comparer.Compare(loadedOps1, loadedOps2,
+
+                var result = await Task.Run(() => comparer.Compare(loadedOps1, loadedOps2,
                                               loadedHeader1.OpeningBalance, loadedHeader2.OpeningBalance,
-                                              loadedHeader1.ClosingBalance, loadedHeader2.ClosingBalance);
+                                              loadedHeader1.ClosingBalance, loadedHeader2.ClosingBalance));
+
                 lastComparisonResult = result;
                 DisplayResult(result);
             }
